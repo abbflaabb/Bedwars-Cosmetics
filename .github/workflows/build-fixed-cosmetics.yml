@@ -1,0 +1,95 @@
+name: Build fixed Cosmetics JAR
+
+on:
+  push:
+    branches:
+      - fix/main-menu-cosmetic-navigation
+    paths:
+      - 'cosmetic-api/src/main/java/xyz/iamthedefender/cosmetics/api/cosmetics/CosmeticsType.java'
+      - '.github/workflows/build-fixed-cosmetics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fixed code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download official Cosmetics 1.4.9 JAR
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 4 --retry-delay 3 \
+            -o /tmp/BedWars-Cosmetics-v1.4.9.jar \
+            'https://github.com/IamTheDefender/Bedwars-Cosmetics/releases/download/1.4.9/BedWars-Cosmetics-v1.4.9.jar'
+          jar tf /tmp/BedWars-Cosmetics-v1.4.9.jar | grep '^xyz/iamthedefender/cosmetics/api/cosmetics/CosmeticsType.class$'
+
+      - name: Compile patched CosmeticsType against official plugin
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('cosmetic-api/src/main/java/xyz/iamthedefender/cosmetics/api/cosmetics/CosmeticsType.java')
+          content = source.read_text()
+          assert 'normalizedName' in content and 'BedDestroys' in content, 'Expected menu navigation fix is missing'
+          content = content.replace('import lombok.Getter;\n', '').replace('@Getter\n', '')
+          accessors = '''
+              public String getFormatedName() { return formatedName; }
+              public ConfigManager getConfigManager() { return configManager; }
+              public List<?> getItemsList() { return itemsList; }
+              public String getSectionKey() { return sectionKey; }
+              public String getPermissionFormat() { return permissionFormat; }
+              public Class<?> getCosmeticsClass() { return cosmeticsClass; }
+          '''
+          anchor = '    public ConfigManager getConfig() {'
+          assert content.count(anchor) == 1
+          content = content.replace(anchor, accessors + '\n' + anchor)
+          out = Path('/tmp/cosmetic_patch_src/xyz/iamthedefender/cosmetics/api/cosmetics/CosmeticsType.java')
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(content)
+          PY
+          mkdir -p /tmp/cosmetic_patch_classes
+          javac --release 11 -cp /tmp/BedWars-Cosmetics-v1.4.9.jar \
+            -d /tmp/cosmetic_patch_classes \
+            /tmp/cosmetic_patch_src/xyz/iamthedefender/cosmetics/api/cosmetics/CosmeticsType.java
+
+      - name: Package and verify patched plugin
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp /tmp/BedWars-Cosmetics-v1.4.9.jar dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar
+          (cd /tmp/cosmetic_patch_classes && jar uf "$GITHUB_WORKSPACE/dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar" \
+            xyz/iamthedefender/cosmetics/api/cosmetics/CosmeticsType.class)
+          unzip -t dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar | tail -1
+          javap -c -p -cp dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar \
+            xyz.iamthedefender.cosmetics.api.cosmetics.CosmeticsType | grep -E 'BedDestroys|normalizedName|replace' || true
+          sha256sum dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar
+
+      - name: Upload fixed JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: BedWars-Cosmetics-1.4.9-MainMenu-Fixed
+          path: dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish JAR to branch for direct download
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar
+          git diff --cached --quiet && exit 0
+          git commit -m 'Build fixed Cosmetics 1.4.9 JAR [skip ci]'
+          git push origin HEAD:fix/main-menu-cosmetic-navigation
