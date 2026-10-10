@@ -89,7 +89,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar
+          git add -f dist/BedWars-Cosmetics-v1.4.9-MainMenu-Fixed.jar
           git diff --cached --quiet && exit 0
           git commit -m 'Build fixed Cosmetics 1.4.9 JAR [skip ci]'
           git push origin HEAD:fix/main-menu-cosmetic-navigation
