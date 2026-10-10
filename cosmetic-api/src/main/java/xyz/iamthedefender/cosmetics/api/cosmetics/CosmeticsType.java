@@ -44,8 +44,22 @@ public enum CosmeticsType {
     }
 
     public static CosmeticsType fromName(String name) {
+        if (name == null) {
+            return null;
+        }
+
+        // MainMenu.yml uses hyphenated keys (for example, Kill-Messages),
+        // while the enum constants use PascalCase (KillMessages).
+        String normalizedName = name.replace("-", "").replace("_", "").replace(" ", "");
+
+        // Legacy MainMenu.yml key for BedBreakEffects.
+        if ("BedDestroys".equalsIgnoreCase(normalizedName)
+                || "BedDestroy".equalsIgnoreCase(normalizedName)) {
+            return BedBreakEffects;
+        }
+
         for (CosmeticsType type : values()) {
-            if (type.name().replace("-", "").replace("_", "").equalsIgnoreCase(name)) {
+            if (type.name().equalsIgnoreCase(normalizedName)) {
                 return type;
             }
         }
